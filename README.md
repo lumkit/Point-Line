@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Banner]()
+![Banner](static/web/bg_banner.png)
 ----
 [![GitHub license](https://img.shields.io/github/license/lumkit/Point-Line)](https://github.com/lumkit/Point-Line/blob/main/LICENSE)
 
@@ -17,7 +17,9 @@ Point-Line是一款基于Compose Multiplatform框架实现的绘画APP
 - [x] Android
 - [x] iOS
 - [x] Desktop
-- [ ] ~~Js/WasmJs~~ （由于**DataStore**、**Room**等库在Js/WasmJs平台上的限制，当前版本的Point-Line暂时不支持在Js/WasmJs平台上运行。）
+- [ ] ~~Js/WasmJs~~ （由于**DataStore**、**Room**等库在Js/WasmJs平台上的限制，
+当前版本的Point-Line暂时不支持在Js/WasmJs平台上运行。
+后期会抽象出Dao层在JS/WasmJs平台上实现持久化服务。）
 
 ## 功能
 1. 画板
