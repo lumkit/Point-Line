@@ -1,0 +1,195 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "1d7bf51a2c4dc6b6fee028cecc8a4e3b",
+    "entities": [
+      {
+        "tableName": "tb_work",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `label` TEXT NOT NULL, `frameWidth` INTEGER, `frameHeight` INTEGER, `contentJson` TEXT, `contentVersion` INTEGER NOT NULL, `contentType` TEXT, `contentEncoding` TEXT, `coverThumb` BLOB, `coverThumbWidth` INTEGER, `coverThumbHeight` INTEGER, `coverThumbMime` TEXT, `coverUpdatedAt` INTEGER NOT NULL, `createAt` INTEGER NOT NULL, `updateAt` INTEGER NOT NULL, `deleted` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameWidth",
+            "columnName": "frameWidth",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "frameHeight",
+            "columnName": "frameHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "contentJson",
+            "columnName": "contentJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentVersion",
+            "columnName": "contentVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentType",
+            "columnName": "contentType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentEncoding",
+            "columnName": "contentEncoding",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverThumb",
+            "columnName": "coverThumb",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "coverThumbWidth",
+            "columnName": "coverThumbWidth",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "coverThumbHeight",
+            "columnName": "coverThumbHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "coverThumbMime",
+            "columnName": "coverThumbMime",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverUpdatedAt",
+            "columnName": "coverUpdatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createAt",
+            "columnName": "createAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updateAt",
+            "columnName": "updateAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tb_work_label",
+            "unique": false,
+            "columnNames": [
+              "label"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tb_work_label` ON `${TABLE_NAME}` (`label`)"
+          },
+          {
+            "name": "index_tb_work_updateAt",
+            "unique": false,
+            "columnNames": [
+              "updateAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tb_work_updateAt` ON `${TABLE_NAME}` (`updateAt`)"
+          },
+          {
+            "name": "index_tb_work_deleted",
+            "unique": false,
+            "columnNames": [
+              "deleted"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tb_work_deleted` ON `${TABLE_NAME}` (`deleted`)"
+          }
+        ]
+      },
+      {
+        "tableName": "tb_work_chunk",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workId` INTEGER NOT NULL, `seq` INTEGER NOT NULL, `bytes` BLOB NOT NULL, `encoding` TEXT NOT NULL, `version` INTEGER NOT NULL, PRIMARY KEY(`workId`, `seq`))",
+        "fields": [
+          {
+            "fieldPath": "workId",
+            "columnName": "workId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytes",
+            "columnName": "bytes",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encoding",
+            "columnName": "encoding",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "workId",
+            "seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tb_work_chunk_workId",
+            "unique": false,
+            "columnNames": [
+              "workId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tb_work_chunk_workId` ON `${TABLE_NAME}` (`workId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1d7bf51a2c4dc6b6fee028cecc8a4e3b')"
+    ]
+  }
+}

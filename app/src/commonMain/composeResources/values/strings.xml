@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">一点一线</string>
+    <string name="tab_product">作品</string>
+    <string name="tab_me">我的</string>
+    <string name="text_product_set">作品集</string>
+    <string name="text_search_product">搜索作品</string>
+    <string name="works_empty_filtered">没找到想要的作品呢~</string>
+    <string name="works_empty">还没有创作过呢~\n点击下方按钮新建一个画板叭</string>
+    <string name="add_work_paint">绘画</string>
+    <string name="new_paint">新建画布</string>
+    <string name="not_naming">未命名</string>
+    <string name="delete">删除</string>
+</resources>
