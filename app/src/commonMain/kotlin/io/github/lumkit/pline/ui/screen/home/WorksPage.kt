@@ -1,18 +1,14 @@
 package io.github.lumkit.pline.ui.screen.home
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
-import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.items
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -185,6 +182,33 @@ private fun WorksContent(
     lazyStaggeredGridState: LazyStaggeredGridState,
 ) {
     val navHostController = LocalScreenNavController.current
+    val scope = rememberCoroutineScope()
+    var uiItems by remember { mutableStateOf(filterWorks) }
+    var exitingIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var enteringIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var updatedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    LaunchedEffect(filterWorks) {
+        val oldMap = uiItems.associateBy { it.id }
+        val newMap = filterWorks.associateBy { it.id }
+        val oldIds = oldMap.keys
+        val newIds = newMap.keys
+
+        val toAdd = newIds - oldIds
+        val toRemove = oldIds - newIds
+        val toUpdate = newIds.intersect(oldIds).filter { oldMap[it] != newMap[it] }.toSet()
+
+        enteringIds = (enteringIds + toAdd)
+        exitingIds = (exitingIds + toRemove)
+        updatedIds = toUpdate
+
+        val exitingItems = uiItems.filter { it.id in exitingIds }
+        val merged = buildList {
+            addAll(filterWorks)
+            addAll(exitingItems.filter { it.id !in newIds })
+        }
+        uiItems = merged
+    }
 
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(2),
@@ -199,13 +223,39 @@ private fun WorksContent(
         verticalItemSpacing = SmallSpacing,
     ) {
         items(
-            items = filterWorks,
+            items = uiItems,
+            key = { it.id }
         ) { work ->
-            WorkItem(
-                viewModel = viewModel,
+            val isExiting = exitingIds.contains(work.id)
+            val isEntering = enteringIds.contains(work.id)
+            val isUpdated = updatedIds.contains(work.id)
+
+            AnimatedWorkItem(
                 work = work,
+                isEntering = isEntering,
+                isExiting = isExiting,
+                isUpdated = isUpdated,
+                onEnterFinished = { id -> enteringIds = enteringIds - id },
+                onExitFinished = { w ->
+                    exitingIds = exitingIds - w.id
+                    uiItems = uiItems.filterNot { it.id == w.id }
+                    scope.launch { viewModel.deleteWork(w) }
+                }
             ) {
-                navHostController.navigateToPaint(work.id)
+                WorkItem(
+                    viewModel = viewModel,
+                    work = work,
+                    onClick = { navHostController.navigateToPaint(work.id) },
+                    onActionTap = { work, event ->
+                        when (event) {
+                            MoreItemEvent.Delete -> {
+                                if (!exitingIds.contains(work.id)) {
+                                    exitingIds = exitingIds + work.id
+                                }
+                            }
+                        }
+                    }
+                )
             }
         }
     }
@@ -213,21 +263,67 @@ private fun WorksContent(
 }
 
 @Composable
+private fun AnimatedWorkItem(
+    work: Work,
+    isEntering: Boolean,
+    isExiting: Boolean,
+    isUpdated: Boolean,
+    onEnterFinished: (Long) -> Unit,
+    onExitFinished: (Work) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val visibleState = remember(work.id, isEntering) { MutableTransitionState(!isEntering) }
+
+    LaunchedEffect(isEntering) {
+        if (isEntering) visibleState.targetState = true
+    }
+    LaunchedEffect(isExiting) {
+        if (isExiting) visibleState.targetState = false
+    }
+
+    LaunchedEffect(visibleState.isIdle, visibleState.currentState, visibleState.targetState) {
+        if (visibleState.isIdle && visibleState.currentState && !isEntering) {
+            onEnterFinished(work.id)
+        }
+        if (visibleState.isIdle && !visibleState.currentState && !visibleState.targetState) {
+            onExitFinished(work)
+        }
+    }
+
+    val alphaAnim = remember(work.id) { Animatable(1f) }
+    LaunchedEffect(isUpdated, work) {
+        if (isUpdated) {
+            alphaAnim.snapTo(0.85f)
+            alphaAnim.animateTo(1f, tween(220))
+        }
+    }
+
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(220)) + expandVertically(),
+        exit = fadeOut(tween(180)) + shrinkVertically(),
+        modifier = Modifier
+            .graphicsLayer { alpha = alphaAnim.value }
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun WorkItem(
     viewModel: HomeViewModel,
     work: Work,
     onClick: (Work) -> Unit,
+    onActionTap: (Work, MoreItemEvent) -> Unit,
 ) {
     val density = LocalDensity.current
     var formattedDate by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
     var height by rememberSaveable(work.id) { mutableStateOf(0f) }
-    val imageData by derivedStateOf(referentialEqualityPolicy()) {
-        work.coverThumb
-    }
+    var imageData by remember(work.id) { mutableStateOf(work.coverThumb) }
 
     LaunchedEffect(work) {
         formattedDate = formatTimestamp(work.updateAt)
+        imageData = work.coverThumb
     }
 
     Card(
@@ -239,29 +335,36 @@ private fun WorkItem(
         ),
         onClick = { onClick(work) },
     ) {
-        AsyncImage(
-            model = imageData,
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth()
-                .clip(
-                    RoundedCornerShape(
-                        bottomStart = LargeSpacing,
-                        bottomEnd = LargeSpacing
+        AnimatedContent(
+            targetState = imageData,
+            transitionSpec = {
+                fadeIn().togetherWith(fadeOut())
+            }
+        ) {
+            AsyncImage(
+                model = it,
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth()
+                    .clip(
+                        RoundedCornerShape(
+                            bottomStart = LargeSpacing,
+                            bottomEnd = LargeSpacing
+                        )
                     )
-                )
-                .background(color = AppTheme.colorScheme.surface)
-                .onSizeChanged {
-                    if (height == 0f) {
-                        val fw = (work.frameWidth ?: 1).coerceAtLeast(1)
-                        val fh = (work.frameHeight ?: 1)
-                        val aspect = fh.toFloat() / fw.toFloat()
-                        height = aspect * it.width.toFloat()
+                    .background(color = AppTheme.colorScheme.surface)
+                    .onSizeChanged {
+                        if (height == 0f) {
+                            val fw = (work.frameWidth ?: 1).coerceAtLeast(1)
+                            val fh = (work.frameHeight ?: 1)
+                            val aspect = fh.toFloat() / fw.toFloat()
+                            height = aspect * it.width.toFloat()
+                        }
                     }
-                }
-                .height(with(density) { height.toDp() }),
-            error = painterResource(Res.drawable.ic_file_empty),
-            contentScale = ContentScale.Crop
-        )
+                    .height(with(density) { height.toDp() }),
+                error = painterResource(Res.drawable.ic_file_empty),
+                contentScale = ContentScale.Crop
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth()
@@ -306,50 +409,67 @@ private fun WorkItem(
                 )
 
                 if (expanded) {
-                    Popup(
-                        onDismissRequest = { expanded = false },
-                        popupPositionProvider = SmartPopupPositionProvider(
-                            density = density,
-                            margin = ExtraSmallSpacing,
-                        ),
-                        properties = PopupProperties(
-                            focusable = true,
-                            dismissOnBackPress = true,
-                            dismissOnClickOutside = true,
-                        )
-                    ) {
-                        Card(
-                            modifier = Modifier.padding(4.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = AppTheme.colorScheme.surface,
-                                contentColor = AppTheme.colorScheme.onSurface,
-                            ),
-                            elevation = CardDefaults.cardElevation(
-                                defaultElevation = 2.dp,
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.clickable(
-                                    indication = null,
-                                    interactionSource = null,
-                                ) {
-                                    scope.launch {
-                                        viewModel.deleteWork(work)
-                                    }
-                                }.padding(
-                                    horizontal = LargeSpacing,
-                                    vertical = SmallSpacing
-                                ),
-                            ) {
-                                Text(
-                                    text = stringResource(Res.string.delete),
-                                    style = AppTheme.typography.bodyMedium,
-                                    color = AppTheme.colorScheme.text,
-                                )
-                            }
-                        }
-                    }
+                    ItemMorePopup(
+                        work = work,
+                        onDismiss = { expanded = false },
+                        onClick = onActionTap,
+                    )
                 }
+            }
+        }
+    }
+}
+
+private enum class MoreItemEvent {
+    Delete,
+}
+@Composable
+private fun ItemMorePopup(
+    work: Work,
+    onDismiss: () -> Unit,
+    onClick: (Work, MoreItemEvent) -> Unit,
+) {
+    val density = LocalDensity.current
+
+    Popup(
+        onDismissRequest = onDismiss,
+        popupPositionProvider = SmartPopupPositionProvider(
+            density = density,
+            margin = ExtraSmallSpacing,
+        ),
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        )
+    ) {
+        Card(
+            modifier = Modifier.padding(4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = AppTheme.colorScheme.surface,
+                contentColor = AppTheme.colorScheme.onSurface,
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 2.dp,
+            )
+        ) {
+            Row(
+                modifier = Modifier.clickable(
+                    indication = null,
+                    interactionSource = null,
+                ) {
+                    onClick(work, MoreItemEvent.Delete)
+                    onDismiss()
+                }.padding(
+                    horizontal = LargeSpacing,
+                    vertical = SmallSpacing
+                ),
+            ) {
+                Text(
+                    text = stringResource(Res.string.delete),
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colorScheme.text,
+                )
             }
         }
     }
