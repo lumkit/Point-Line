@@ -184,7 +184,8 @@ private fun WorksContent(
     val navHostController = LocalScreenNavController.current
     val scope = rememberCoroutineScope()
     var uiItems by remember { mutableStateOf(filterWorks) }
-    var exitingIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var exitingFilterIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var exitingDeleteIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var enteringIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var updatedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
 
@@ -199,10 +200,12 @@ private fun WorksContent(
         val toUpdate = newIds.intersect(oldIds).filter { oldMap[it] != newMap[it] }.toSet()
 
         enteringIds = (enteringIds + toAdd)
-        exitingIds = (exitingIds + toRemove)
         updatedIds = toUpdate
 
-        val exitingItems = uiItems.filter { it.id in exitingIds }
+        // 过滤导致的临时退出：加入 toRemove；如果新过滤又包含，则移除退出标记
+        exitingFilterIds = (exitingFilterIds + toRemove) - newIds
+
+        val exitingItems = uiItems.filter { it.id in exitingFilterIds }
         val merged = buildList {
             addAll(filterWorks)
             addAll(exitingItems.filter { it.id !in newIds })
@@ -226,7 +229,7 @@ private fun WorksContent(
             items = uiItems,
             key = { it.id }
         ) { work ->
-            val isExiting = exitingIds.contains(work.id)
+            val isExiting = exitingDeleteIds.contains(work.id) || exitingFilterIds.contains(work.id)
             val isEntering = enteringIds.contains(work.id)
             val isUpdated = updatedIds.contains(work.id)
 
@@ -237,9 +240,14 @@ private fun WorksContent(
                 isUpdated = isUpdated,
                 onEnterFinished = { id -> enteringIds = enteringIds - id },
                 onExitFinished = { w ->
-                    exitingIds = exitingIds - w.id
-                    uiItems = uiItems.filterNot { it.id == w.id }
-                    scope.launch { viewModel.deleteWork(w) }
+                    if (exitingDeleteIds.contains(w.id)) {
+                        exitingDeleteIds = exitingDeleteIds - w.id
+                        uiItems = uiItems.filterNot { it.id == w.id }
+                        scope.launch { viewModel.deleteWork(w) }
+                    } else if (exitingFilterIds.contains(w.id)) {
+                        exitingFilterIds = exitingFilterIds - w.id
+                        uiItems = uiItems.filterNot { it.id == w.id }
+                    }
                 }
             ) {
                 WorkItem(
@@ -249,8 +257,8 @@ private fun WorksContent(
                     onActionTap = { work, event ->
                         when (event) {
                             MoreItemEvent.Delete -> {
-                                if (!exitingIds.contains(work.id)) {
-                                    exitingIds = exitingIds + work.id
+                                if (!exitingDeleteIds.contains(work.id)) {
+                                    exitingDeleteIds = exitingDeleteIds + work.id
                                 }
                             }
                         }
@@ -278,11 +286,11 @@ private fun AnimatedWorkItem(
         if (isEntering) visibleState.targetState = true
     }
     LaunchedEffect(isExiting) {
-        if (isExiting) visibleState.targetState = false
+        if (isExiting) visibleState.targetState = false else visibleState.targetState = true
     }
 
     LaunchedEffect(visibleState.isIdle, visibleState.currentState, visibleState.targetState) {
-        if (visibleState.isIdle && visibleState.currentState && !isEntering) {
+        if (visibleState.isIdle && visibleState.currentState) {
             onEnterFinished(work.id)
         }
         if (visibleState.isIdle && !visibleState.currentState && !visibleState.targetState) {
