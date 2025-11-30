@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 @OptIn(ExperimentalTime::class)
 class WorkRepository(private val db: AppDatabase) {
 
-    suspend fun create(label: String, frameWidth: Int? = null, frameHeight: Int? = null): Long {
+    suspend fun create(label: String, frameWidth: Int? = null, frameHeight: Int? = null, contentJson: String, coverThumb: ByteArray? = null, coverThumbWidth: Int? = null, coverThumbHeight: Int? = null, coverThumbMime: String? = null): Long {
         val now = Clock.System.now().toEpochMilliseconds()
         return db.workDao().insert(
             Work(
@@ -20,6 +20,7 @@ class WorkRepository(private val db: AppDatabase) {
                 frameWidth = frameWidth,
                 frameHeight = frameHeight,
                 updateAt = now,
+                contentJson = contentJson,
             )
         )
     }

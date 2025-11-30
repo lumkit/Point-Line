@@ -2,10 +2,8 @@ package io.github.lumkit.pline.ui.screen
 
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.toRoute
 import io.github.lumkit.pline.ui.screen.home.homeScreen
 import io.github.lumkit.pline.ui.screen.paint.paintScreen
-import io.ktor.http.*
 import kotlinx.serialization.Serializable
 
 sealed class ScreenRoute {

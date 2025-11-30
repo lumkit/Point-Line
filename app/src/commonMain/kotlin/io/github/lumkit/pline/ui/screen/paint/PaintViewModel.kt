@@ -8,13 +8,9 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import kotlin.math.max
 import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -23,8 +19,18 @@ import io.github.lumkit.pline.graphics.StrokeModel
 import io.github.lumkit.pline.graphics.rasterizePathStrokeToCanvas
 import io.github.lumkit.pline.graphics.rasterizeStampStrokeToCanvas
 import io.github.lumkit.pline.util.encodeImageBitmapToPng
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+
+enum class PaintScreenMode {
+    DRAG,
+    BRUSH,
+    ERASER,
+    LAYER,
+}
 
 class PaintViewModel(
     db: AppDatabase
@@ -40,12 +46,17 @@ class PaintViewModel(
     private val _label = MutableStateFlow("")
     val label: StateFlow<String> = _label
 
-    suspend fun createPaint(state: DrawingState, label: String) {
+    private val _screenMode = MutableStateFlow(PaintScreenMode.DRAG)
+    val screenMode: StateFlow<PaintScreenMode> = _screenMode
+
+    suspend fun createPaint(state: DrawingState, label: String, density: Density, layoutDirection: LayoutDirection) {
         val id = repository.create(
             label = label,
             frameWidth = state.frame.width,
             frameHeight = state.frame.height,
+            contentJson = state.export(),
         )
+        saveThumbnail(state, density, layoutDirection, id)
         _workId.value = id
     }
 
@@ -110,5 +121,38 @@ class PaintViewModel(
         }
         val bytes = encodeImageBitmapToPng(thumb)
         repository.setCoverThumb(id, bytes, tw, th, "image/png")
+    }
+
+    @OptIn(ExperimentalTime::class)
+    suspend fun autoSaveWork(
+        state: DrawingState,
+        defaultLabel: String,
+        density: Density,
+        direction: LayoutDirection,
+        onComplete: suspend () -> Unit,
+    ) {
+        try {
+            if (workId.value != 0L) {
+                val snapshotTime = Clock.System.now().toEpochMilliseconds()
+                saveWork(
+                    state = state,
+                    defaultLabel = defaultLabel,
+                    id = workId.value,
+                )
+                saveThumbnail(
+                    state = state,
+                    density = density,
+                    layoutDirection = direction,
+                    id = workId.value,
+                )
+                if (Clock.System.now().toEpochMilliseconds() - snapshotTime < 1000) {
+                    delay(1000)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            onComplete()
+        }
     }
 }

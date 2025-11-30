@@ -83,8 +83,8 @@ class DrawingState {
     var eraserWidth by mutableStateOf(24f)
     var brushPreset: BrushPreset by mutableStateOf(
         BrushPreset(
-            shape = BrushShapeType.Square,
-            mode = StrokeModel.Path,
+            shape = BrushShapeType.Circle,
+            mode = StrokeModel.Stamp,
             spacing = 0f,
             opacity = 1f,
             velocitySpacingScale = 0f,

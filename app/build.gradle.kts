@@ -93,6 +93,9 @@ kotlin {
 
             // lottie
             implementation(libs.compottie)
+
+            // back handler
+            implementation(libs.ui.backhandler)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

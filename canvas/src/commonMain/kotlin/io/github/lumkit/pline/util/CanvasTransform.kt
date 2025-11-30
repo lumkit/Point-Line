@@ -10,6 +10,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.*
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import io.github.lumkit.pline.DrawingState
 import io.github.lumkit.pline.graphics.DrawMode
 import io.github.lumkit.pline.tool.ToolType
@@ -31,39 +33,51 @@ import kotlin.math.sqrt
  *
  * @param state 绘制状态
  */
-fun Modifier.canvasTransforms(state: DrawingState): Modifier = this
-    .pointerInput(Unit) {
-        detectDragGestures(
-            onDrag = { change, dragAmount ->
-                if (state.drawMode == DrawMode.Drag) {
-                    state.offset += Offset(dragAmount.x * state.panSensitivity, dragAmount.y * state.panSensitivity)
-                    change.consume()
-                }
-            }
-        )
-    }
-    .composed {
-        val spec = tween<Float>(durationMillis = 200, easing = LinearOutSlowInEasing)
-        val scaleAnim = remember { Animatable(state.scaleFactor) }
-        val offsetXAnim = remember { Animatable(state.offset.x) }
-        val offsetYAnim = remember { Animatable(state.offset.y) }
-        var scaleTarget by remember { mutableStateOf(state.scaleFactor) }
-        var offsetXTarget by remember { mutableStateOf(state.offset.x) }
-        var offsetYTarget by remember { mutableStateOf(state.offset.y) }
+fun Modifier.canvasTransforms(
+    state: DrawingState,
+    onDragging: (Density.(Offset) -> Unit)? = null,
+    onScaling: (Density.(Float) -> Unit)? = null,
+    onRotating: (Density.(Float) -> Unit)? = null,
+): Modifier = composed {
+    val densityObj = LocalDensity.current
+    val spec = tween<Float>(durationMillis = 200, easing = LinearOutSlowInEasing)
+    val scaleAnim = remember { Animatable(state.scaleFactor) }
+    val offsetXAnim = remember { Animatable(state.offset.x) }
+    val offsetYAnim = remember { Animatable(state.offset.y) }
+    var scaleTarget by remember { mutableStateOf(state.scaleFactor) }
+    var offsetXTarget by remember { mutableStateOf(state.offset.x) }
+    var offsetYTarget by remember { mutableStateOf(state.offset.y) }
 
-        LaunchedEffect(scaleTarget) {
-            scaleAnim.snapTo(state.scaleFactor)
-            scaleAnim.animateTo(scaleTarget, spec) { state.scaleFactor = value }
+    LaunchedEffect(scaleTarget) {
+        scaleAnim.snapTo(state.scaleFactor)
+        scaleAnim.animateTo(scaleTarget, spec) { state.scaleFactor = value }
+    }
+    LaunchedEffect(offsetXTarget) {
+        offsetXAnim.snapTo(state.offset.x)
+        offsetXAnim.animateTo(offsetXTarget, spec) { state.offset = Offset(value, state.offset.y) }
+    }
+    LaunchedEffect(offsetYTarget) {
+        offsetYAnim.snapTo(state.offset.y)
+        offsetYAnim.animateTo(offsetYTarget, spec) { state.offset = Offset(state.offset.x, value) }
+    }
+
+    this
+        .pointerInput(Unit) {
+            detectDragGestures(
+                onDrag = { change, dragAmount ->
+                    if (state.drawMode == DrawMode.Drag) {
+                        val applied = Offset(
+                            dragAmount.x * state.panSensitivity,
+                            dragAmount.y * state.panSensitivity
+                        )
+                        state.offset += applied
+                        onDragging?.let { with(densityObj) { it(applied) } }
+                        change.consume()
+                    }
+                }
+            )
         }
-        LaunchedEffect(offsetXTarget) {
-            offsetXAnim.snapTo(state.offset.x)
-            offsetXAnim.animateTo(offsetXTarget, spec) { state.offset = Offset(value, state.offset.y) }
-        }
-        LaunchedEffect(offsetYTarget) {
-            offsetYAnim.snapTo(state.offset.y)
-            offsetYAnim.animateTo(offsetYTarget, spec) { state.offset = Offset(state.offset.x, value) }
-        }
-        pointerInput(state.scaleFactor, state.panSensitivity) {
+        .pointerInput(state.scaleFactor, state.panSensitivity) {
             awaitPointerEventScope {
                 while (true) {
                     val event: PointerEvent = awaitPointerEvent()
@@ -106,6 +120,9 @@ fun Modifier.canvasTransforms(state: DrawingState): Modifier = this
                             val offX = pos.x - snew * wx - (canvasW - viewWNew) / 2f
                             val offY = pos.y - snew * wy - (canvasH - viewHNew) / 2f
 
+                            val scaleDelta = newFactor - state.scaleFactor
+                            onScaling?.let { with(densityObj) { it(scaleDelta) } }
+
                             scaleTarget = newFactor
                             offsetXTarget = offX
                             offsetYTarget = offY
@@ -114,12 +131,16 @@ fun Modifier.canvasTransforms(state: DrawingState): Modifier = this
                             val s = state.scaleFactor
                             val amp = state.panSensitivity * (6f + 3f * s)
                             val targetX = state.offset.x + delta * amp
+                            val applied = Offset(targetX - state.offset.x, 0f)
+                            onDragging?.let { with(densityObj) { it(applied) } }
                             offsetXTarget = targetX
                         } else {
                             val delta = if (abs(dy) > abs(dx)) dy else dx
                             val s = state.scaleFactor
                             val amp = state.panSensitivity * (6f + 3f * s)
                             val targetY = state.offset.y + delta * amp
+                            val applied = Offset(0f, targetY - state.offset.y)
+                            onDragging?.let { with(densityObj) { it(applied) } }
                             offsetYTarget = targetY
                         }
                         event.changes.forEach { it.consume() }
@@ -127,7 +148,7 @@ fun Modifier.canvasTransforms(state: DrawingState): Modifier = this
                 }
             }
         }
-    }
+}
 
 /**
  * 绘制交互（单指/鼠标绘制；双指平移缩放旋转）。
@@ -139,120 +160,135 @@ fun Modifier.canvasTransforms(state: DrawingState): Modifier = this
  *
  * @param state 绘制状态
  */
-fun Modifier.canvasDrawing(state: DrawingState): Modifier = this
-    .pointerInput(state.drawMode, state.scaleFactor) {
-        awaitPointerEventScope {
-            var drawing = false
-            var pendingStart = false
-            var startPos = Offset.Zero
-            while (true) {
-                val event: PointerEvent = awaitPointerEvent()
-                val pressed = event.changes.filter { it.pressed }
-                if (state.drawMode != DrawMode.Draw || (state.currentTool != ToolType.Brush && state.currentTool != ToolType.Eraser)) {
-                    if (drawing) {
-                        state.endDraw()
-                        drawing = false
-                    }
-                    continue
-                }
-                if (pressed.size == 1) {
-                    val pos = pressed[0].position
-                    val canvasSize = Size(size.width.toFloat(), size.height.toFloat())
-                    if (!drawing) {
-                        if (!pendingStart) {
-                            pendingStart = true
-                            startPos = pos
-                        } else {
-                            val dx = pos.x - startPos.x
-                            val dy = pos.y - startPos.y
-                            val dist = sqrt(dx * dx + dy * dy)
-                            if (dist >= state.drawTapSlopViewPx) {
-                                state.beginDraw(pos, canvasSize, this.density)
-                                drawing = true
-                                pendingStart = false
-                            }
+fun Modifier.canvasDrawing(
+    state: DrawingState,
+    onDragging: (Density.(Offset) -> Unit)? = null,
+    onScaling: (Density.(Float) -> Unit)? = null,
+    onRotating: (Density.(Float) -> Unit)? = null,
+): Modifier = composed {
+    val densityObj = LocalDensity.current
+    this
+        .pointerInput(state.drawMode, state.scaleFactor) {
+            awaitPointerEventScope {
+                var drawing = false
+                var pendingStart = false
+                var startPos = Offset.Zero
+                while (true) {
+                    val event: PointerEvent = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (state.drawMode != DrawMode.Draw || (state.currentTool != ToolType.Brush && state.currentTool != ToolType.Eraser)) {
+                        if (drawing) {
+                            state.endDraw()
+                            drawing = false
                         }
+                        continue
+                    }
+                    if (pressed.size == 1) {
+                        val pos = pressed[0].position
+                        val canvasSize = Size(size.width.toFloat(), size.height.toFloat())
+                        if (!drawing) {
+                            if (!pendingStart) {
+                                pendingStart = true
+                                startPos = pos
+                            } else {
+                                val dx = pos.x - startPos.x
+                                val dy = pos.y - startPos.y
+                                val dist = sqrt(dx * dx + dy * dy)
+                                if (dist >= state.drawTapSlopViewPx) {
+                                    state.beginDraw(pos, canvasSize, this.density)
+                                    drawing = true
+                                    pendingStart = false
+                                }
+                            }
+                        } else {
+                            state.appendDraw(pos, canvasSize, this.density)
+                        }
+                        pressed[0].consume()
                     } else {
-                        state.appendDraw(pos, canvasSize, this.density)
-                    }
-                    pressed[0].consume()
-                } else {
-                    pendingStart = false
-                    if (drawing) {
-                        state.endDraw()
-                        drawing = false
+                        pendingStart = false
+                        if (drawing) {
+                            state.endDraw()
+                            drawing = false
+                        }
                     }
                 }
             }
         }
-    }
-    .pointerInput(state.drawMode) {
-        awaitPointerEventScope {
-            while (true) {
-                val event: PointerEvent = awaitPointerEvent()
-                val pressed = event.changes.filter { it.pressed }
-                if (pressed.size >= 2) {
-                    val p0Prev = pressed[0].previousPosition
-                    val p1Prev = pressed[1].previousPosition
-                    val p0 = pressed[0].position
-                    val p1 = pressed[1].position
+        .pointerInput(state.drawMode) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event: PointerEvent = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.size >= 2) {
+                        val p0Prev = pressed[0].previousPosition
+                        val p1Prev = pressed[1].previousPosition
+                        val p0 = pressed[0].position
+                        val p1 = pressed[1].position
 
-                    val prevCentroid = (p0Prev + p1Prev) / 2f
-                    val currCentroid = (p0 + p1) / 2f
-                    val pan = currCentroid - prevCentroid
+                        val prevCentroid = (p0Prev + p1Prev) / 2f
+                        val currCentroid = (p0 + p1) / 2f
+                        val pan = currCentroid - prevCentroid
 
-                    val vxPrev = p1Prev - p0Prev
-                    val vxCurr = p1 - p0
-                    val prevDist = sqrt(vxPrev.x * vxPrev.x + vxPrev.y * vxPrev.y)
-                    val currDist = sqrt(vxCurr.x * vxCurr.x + vxCurr.y * vxCurr.y)
-                    val zoomRatio = if (prevDist > 0f) (currDist / prevDist) else 1f
-                    val prevAngle = atan2(vxPrev.y.toDouble(), vxPrev.x.toDouble())
-                    val currAngle = atan2(vxCurr.y.toDouble(), vxCurr.x.toDouble())
-                    val rotDelta =
-                        Math.shortestAngleDelta(prevAngle.toFloat(), currAngle.toFloat()) * state.rotationSensitivity
+                        val vxPrev = p1Prev - p0Prev
+                        val vxCurr = p1 - p0
+                        val prevDist = sqrt(vxPrev.x * vxPrev.x + vxPrev.y * vxPrev.y)
+                        val currDist = sqrt(vxCurr.x * vxCurr.x + vxCurr.y * vxCurr.y)
+                        val zoomRatio = if (prevDist > 0f) (currDist / prevDist) else 1f
+                        val prevAngle = atan2(vxPrev.y.toDouble(), vxPrev.x.toDouble())
+                        val currAngle = atan2(vxCurr.y.toDouble(), vxCurr.x.toDouble())
+                        val rotDelta =
+                            Math.shortestAngleDelta(prevAngle.toFloat(), currAngle.toFloat()) * state.rotationSensitivity
 
-                    val canvasW = size.width.toFloat()
-                    val canvasH = size.height.toFloat()
-                    val fw = state.frame.width.toFloat()
-                    val fh = state.frame.height.toFloat()
-                    val basePx = state.baseSize * this.density
-                    val r = min(basePx / fw, basePx / fh)
+                        val canvasW = size.width.toFloat()
+                        val canvasH = size.height.toFloat()
+                        val fw = state.frame.width.toFloat()
+                        val fh = state.frame.height.toFloat()
+                        val basePx = state.baseSize * this.density
+                        val r = min(basePx / fw, basePx / fh)
 
-                    val sold = r * state.scaleFactor
-                    val snewFactor = (state.scaleFactor * zoomRatio).coerceIn(state.minScale, state.maxScale)
-                    val snew = r * snewFactor
+                        val sold = r * state.scaleFactor
+                        val snewFactor = (state.scaleFactor * zoomRatio).coerceIn(state.minScale, state.maxScale)
+                        val snew = r * snewFactor
 
-                    val viewWOld = fw * sold
-                    val viewHOld = fh * sold
-                    val lox = (canvasW - viewWOld) / 2f + state.offset.x
-                    val loy = (canvasH - viewHOld) / 2f + state.offset.y
-                    val pivotOldX = lox + viewWOld / 2f
-                    val pivotOldY = loy + viewHOld / 2f
+                        val viewWOld = fw * sold
+                        val viewHOld = fh * sold
+                        val lox = (canvasW - viewWOld) / 2f + state.offset.x
+                        val loy = (canvasH - viewHOld) / 2f + state.offset.y
+                        val pivotOldX = lox + viewWOld / 2f
+                        val pivotOldY = loy + viewHOld / 2f
 
-                    val pivotPanX = pivotOldX + pan.x
-                    val pivotPanY = pivotOldY + pan.y
+                        val pivotPanX = pivotOldX + pan.x
+                        val pivotPanY = pivotOldY + pan.y
 
-                    val ratio = if (sold != 0f) snew / sold else 1f
-                    val dx = pivotPanX - currCentroid.x
-                    val dy = pivotPanY - currCentroid.y
-                    val dxs = dx * ratio
-                    val dys = dy * ratio
-                    val dxr = dxs * cos(rotDelta) - dys * sin(rotDelta)
-                    val dyr = dxs * sin(rotDelta) + dys * cos(rotDelta)
-                    val lnxPivot = currCentroid.x + dxr
-                    val lnyPivot = currCentroid.y + dyr
+                        val ratio = if (sold != 0f) snew / sold else 1f
+                        val dx = pivotPanX - currCentroid.x
+                        val dy = pivotPanY - currCentroid.y
+                        val dxs = dx * ratio
+                        val dys = dy * ratio
+                        val dxr = dxs * cos(rotDelta) - dys * sin(rotDelta)
+                        val dyr = dxs * sin(rotDelta) + dys * cos(rotDelta)
+                        val lnxPivot = currCentroid.x + dxr
+                        val lnyPivot = currCentroid.y + dyr
 
-                    val viewWNew = fw * snew
-                    val viewHNew = fh * snew
-                    val offX = lnxPivot - (canvasW - viewWNew) / 2f - viewWNew / 2f
-                    val offY = lnyPivot - (canvasH - viewHNew) / 2f - viewHNew / 2f
+                        val viewWNew = fw * snew
+                        val viewHNew = fh * snew
+                        val offX = lnxPivot - (canvasW - viewWNew) / 2f - viewWNew / 2f
+                        val offY = lnyPivot - (canvasH - viewHNew) / 2f - viewHNew / 2f
 
-                    state.scaleFactor = snewFactor
-                    state.rotationRad += rotDelta
-                    state.offset = Offset(offX, offY)
+                        val offsetDelta = Offset(offX - state.offset.x, offY - state.offset.y)
+                        val scaleDelta = snewFactor - state.scaleFactor
 
-                    pressed.forEach { it.consume() }
+                        onDragging?.let { with(densityObj) { it(offsetDelta) } }
+                        onScaling?.let { with(densityObj) { it(scaleDelta) } }
+                        onRotating?.let { with(densityObj) { it(rotDelta) } }
+
+                        state.scaleFactor = snewFactor
+                        state.rotationRad += rotDelta
+                        state.offset = Offset(offX, offY)
+
+                        pressed.forEach { it.consume() }
+                    }
                 }
             }
         }
-    }
+}
